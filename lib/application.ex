@@ -16,6 +16,7 @@ defmodule Blurber.Application do
 
     children = [
       SlashCommand,
+      {DynamicSupervisor, strategy: :one_for_one, name: Blurber.ESS.DynamicSupervisor},
       {Blurber.ESS, []},
       {PS2.Socket, ess_opts},
       {Blurber.Consumer, name: Blurber.Consumer}
