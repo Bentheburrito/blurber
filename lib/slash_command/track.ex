@@ -3,6 +3,7 @@ defmodule SlashCommand.Track do
 
   import PS2.API.QueryBuilder
 
+  alias Blurber.ESS.Session
   alias PS2.API.QueryResult
   alias Nostrum.Struct.{Interaction, Guild}
   alias Nostrum.Cache.GuildCache
@@ -12,7 +13,6 @@ defmodule SlashCommand.Track do
 
   @none_voicepack_dirs ["README.md", "TEMPLATE"]
   @scope if System.get_env("MIX_ENV") == "prod", do: :global, else: :application_guilds
-  @timeout_mins 5
 
   @impl SlashCommand
   def command_definition() do
@@ -62,13 +62,12 @@ defmodule SlashCommand.Track do
   def ephemeral?, do: true
 
   @impl SlashCommand
-  def run(%Interaction{} = interaction) do
+  def run(%Interaction{guild_id: guild_id, channel_id: channel_id} = interaction) do
     content =
       with options <- SlashCommand.get_options(interaction),
            {:ok, character_name} <- Map.fetch(options, "character_name"),
            {:ok, voicepack} <- Map.fetch(options, "voicepack"),
-           {:cur_vc, nil} <- {:cur_vc, Nostrum.Voice.get_channel_id(interaction.guild_id)},
-           {:ok, %Guild{voice_states: voice_states}} <- GuildCache.get(interaction.guild_id),
+           {:ok, %Guild{voice_states: voice_states}} <- GuildCache.get(guild_id),
            %{channel_id: vc_id} <- Enum.find(voice_states, &(&1.user_id == interaction.user.id)) do
         Query.new(collection: "character")
         |> term("name.first_lower", String.downcase(character_name))
@@ -79,13 +78,21 @@ defmodule SlashCommand.Track do
           {:ok, %QueryResult{data: %{"character_id" => character_id}}} ->
             PS2.Socket.subscribe!(Blurber.Socket, Blurber.ESS.subscription(character_id))
 
-            with :ok <- Blurber.ESS.new_session(character_id, voicepack, interaction.guild_id),
-                 :ok <- Nostrum.Voice.join_channel(interaction.guild_id, vc_id) do
+            with {:error, :not_found} <- Blurber.ESS.session_pid(character_id),
+                 :ok <- Blurber.ESS.new_session(character_id, voicepack, guild_id, channel_id),
+                 :ok <- Nostrum.Voice.join_channel(guild_id, vc_id) do
               """
               Successfully joined voice channel.
               Listening to events from #{character_name} (ID #{character_id}), using voicepack '#{voicepack}'
               """
             else
+              {:ok, pid} when is_pid(pid) ->
+                """
+                It looks like someone else in this server is currently tracking a character - you must wait for them to
+                logout or for their tracking session to expire (#{Session.afk_timeout_ms() / (60 * 1000)} minutes of no
+                events) before starting a new tracking session in this server.
+                """
+
               e ->
                 Logger.error(
                   "Could not create a new session and join the voice channel: #{inspect(e)}"
@@ -94,7 +101,7 @@ defmodule SlashCommand.Track do
                 "Could not join the voice channel, please try again soon."
             end
 
-          {:ok, %QueryResult{data: nil}} ->
+          {:ok, %QueryResult{}} ->
             "Could not get that character's ID, please double check the spelling and try again."
 
           {:error, error} ->
@@ -110,18 +117,9 @@ defmodule SlashCommand.Track do
           "Please join a voice channel."
 
         {:error, guild_fetch_reason} ->
-          Logger.error(
-            "Could not get guild from interaction.guild_id: #{inspect(guild_fetch_reason)}"
-          )
+          Logger.error("Could not get guild from guild_id: #{inspect(guild_fetch_reason)}")
 
           "Unable to get server info, please make sure you're connected to a voice channel and try again."
-
-        {:cur_vc, _channel_id} ->
-          """
-          It looks like someone else in this server is currently tracking a character - you must wait for them to
-          logout or for their tracking session to expire (#{@timeout_mins} minutes of no events) before starting a new
-          tracking session in this server.
-          """
       end
 
     {:response,

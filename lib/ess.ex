@@ -20,8 +20,8 @@ defmodule Blurber.ESS do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  def new_session(character_id, voicepack, guild_id) do
-    child_spec = {Session, {character_id, voicepack, guild_id}}
+  def new_session(character_id, voicepack, guild_id, channel_id) do
+    child_spec = {Session, {character_id, voicepack, guild_id, channel_id}}
 
     case DynamicSupervisor.start_child(Blurber.ESS.DynamicSupervisor, child_spec) do
       {:ok, pid} ->
@@ -31,6 +31,15 @@ defmodule Blurber.ESS do
         Logger.error("Could not start session process: #{inspect(e)}")
         :error
     end
+  end
+
+  def close_session(character_id) do
+    GenServer.call(__MODULE__, {:close_session, character_id})
+  end
+
+  @spec session_pid(character_id :: String.t()) :: {:ok, pid()} | {:error, :not_found}
+  def session_pid(character_id) do
+    GenServer.call(__MODULE__, {:session_pid, character_id})
   end
 
   def weapon_id?(weapon_id) do
@@ -81,6 +90,28 @@ defmodule Blurber.ESS do
   end
 
   @impl GenServer
+  def handle_call({:close_session, character_id}, _from, %ESS{} = state) do
+    case Map.pop(state.patterns, character_id, :no_session) do
+      {:no_session, _} ->
+        {:reply, {:error, :not_found}, state}
+
+      {pid, new_patterns} ->
+        result = DynamicSupervisor.terminate_child(Blurber.ESS.DynamicSupervisor, pid)
+        {:reply, result, %ESS{state | patterns: new_patterns}}
+    end
+  end
+
+  def handle_call({:session_pid, character_id}, _from, %ESS{} = state) do
+    reply =
+      case Map.fetch(state.patterns, character_id) do
+        {:ok, pid} -> {:ok, pid}
+        :error -> {:error, :not_found}
+      end
+
+    {:reply, reply, state}
+  end
+
+  @impl GenServer
   def handle_call({:weapon_id?, weapon_id}, _from, %ESS{} = state) do
     {:reply, weapon_id in get_weapon_ids(state), state}
   end
@@ -88,7 +119,8 @@ defmodule Blurber.ESS do
   @impl GenServer
   def handle_cast({:handle_event, character_ids, event_name, payload}, %ESS{} = state) do
     id_mappings =
-      Stream.map(character_ids, fn {_field_name, id} ->
+      character_ids
+      |> Stream.map(fn {_field_name, id} ->
         Map.fetch(state.patterns, id)
       end)
       |> Stream.dedup()

@@ -15,16 +15,19 @@ defmodule Blurber.ESS.Session do
   @enforce_keys [:voicepack, :guild_id, :character_id]
   defstruct killing_spree_count: 0,
             last_kill_timestamp: 0,
+            afk_timer: nil,
             voicepack: nil,
             guild_id: nil,
+            channel_id: nil,
             character_id: nil
 
   ### API
 
-  def start_link({character_id, voicepack, guild_id}) do
+  def start_link({character_id, voicepack, guild_id, channel_id}) do
     GenServer.start_link(__MODULE__, %Session{
       voicepack: voicepack,
       guild_id: guild_id,
+      channel_id: channel_id,
       character_id: character_id
     })
   end
@@ -33,24 +36,40 @@ defmodule Blurber.ESS.Session do
     GenServer.cast(session_pid, {:handle_event, event_name, payload})
   end
 
+  def afk_timeout_ms, do: 10 * 60 * 1000
+
   ### Impl
 
   @impl GenServer
   def init(%Session{} = session) do
-    {:ok, session}
+    afk_timer = Process.send_after(self(), :afk_timeout, afk_timeout_ms())
+    {:ok, %Session{session | afk_timer: afk_timer}}
   end
 
   @impl GenServer
   def handle_cast({:handle_event, event_name, payload}, %Session{} = state) do
     case fetch_category(event_name, payload, state.character_id, state) do
       {:ok, category, state} ->
-        IO.inspect(category, label: "about to play sound with category")
         play_random_sound(category, state)
-        {:noreply, state}
+
+        # Cancel the current afk timer, and start another
+        Process.cancel_timer(state.afk_timer)
+        afk_timer = Process.send_after(self(), :afk_timeout, afk_timeout_ms())
+
+        {:noreply, %Session{state | afk_timer: afk_timer}}
 
       :none ->
         {:noreply, state}
     end
+  end
+
+  @impl GenServer
+  def handle_info(:afk_timeout, %Session{} = state) do
+    Nostrum.Api.create_message(state.channel_id, "Detected logout, ending tracking session.")
+    Nostrum.Voice.leave_channel(state.guild_id)
+    ESS.close_session(state.character_id)
+
+    {:noreply, state}
   end
 
   defp fetch_category("GainExperience", %{"experience_id" => xp_id} = ge, char_id, state)
