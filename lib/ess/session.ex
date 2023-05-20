@@ -36,7 +36,8 @@ defmodule Blurber.ESS.Session do
     GenServer.cast(session_pid, {:handle_event, event_name, payload})
   end
 
-  def afk_timeout_ms, do: 10 * 60 * 1000
+  @afk_timeout_mins 1
+  def afk_timeout_ms, do: @afk_timeout_mins * 60 * 1000
 
   ### Impl
 
@@ -65,7 +66,11 @@ defmodule Blurber.ESS.Session do
 
   @impl GenServer
   def handle_info(:afk_timeout, %Session{} = state) do
-    Nostrum.Api.create_message(state.channel_id, "Detected logout, ending tracking session.")
+    Nostrum.Api.create_message(
+      state.channel_id,
+      "No events for #{@afk_timeout_mins} minute(s), ending tracking session."
+    )
+
     Nostrum.Voice.leave_channel(state.guild_id)
     ESS.close_session(state.character_id)
 

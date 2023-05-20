@@ -69,6 +69,8 @@ defmodule SlashCommand.Track do
            {:ok, voicepack} <- Map.fetch(options, "voicepack"),
            {:ok, %Guild{voice_states: voice_states}} <- GuildCache.get(guild_id),
            %{channel_id: vc_id} <- Enum.find(voice_states, &(&1.user_id == interaction.user.id)) do
+        # TODO: deferred application command response here. The below query can take a long time (or randomly fail)
+
         Query.new(collection: "character")
         |> term("name.first_lower", String.downcase(character_name))
         |> limit(1)
