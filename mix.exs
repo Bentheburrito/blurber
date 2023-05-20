@@ -20,7 +20,8 @@ defmodule Blurber.MixProject do
 
   defp deps do
     [
-      {:nostrum, github: "Kraigie/nostrum"},
+      {:nostrum, "~> 0.7"},
+      {:nosedrum, "~> 0.5"},
       {:dotenv_parser, "~> 1.2"},
       {:planetside_api, "~> 0.3.0"}
     ]

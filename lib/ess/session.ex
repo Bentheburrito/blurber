@@ -36,7 +36,7 @@ defmodule Blurber.ESS.Session do
     GenServer.cast(session_pid, {:handle_event, event_name, payload})
   end
 
-  @afk_timeout_mins 1
+  @afk_timeout_mins 10
   def afk_timeout_ms, do: @afk_timeout_mins * 60 * 1000
 
   ### Impl

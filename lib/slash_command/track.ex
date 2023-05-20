@@ -1,4 +1,6 @@
-defmodule SlashCommand.Track do
+defmodule Blurber.ApplicationCommands.Track do
+  @behaviour Nosedrum.ApplicationCommand
+
   require Logger
 
   import PS2.API.QueryBuilder
@@ -9,13 +11,20 @@ defmodule SlashCommand.Track do
   alias Nostrum.Cache.GuildCache
   alias PS2.API.Query
 
-  @behaviour SlashCommand
-
   @none_voicepack_dirs ["README.md", "TEMPLATE"]
-  @scope if System.get_env("MIX_ENV") == "prod", do: :global, else: :application_guilds
 
-  @impl SlashCommand
-  def command_definition() do
+  @impl Nosedrum.ApplicationCommand
+  def description do
+    "Track a character."
+  end
+
+  @impl Nosedrum.ApplicationCommand
+  def type do
+    :slash
+  end
+
+  @impl Nosedrum.ApplicationCommand
+  def options do
     voicepack_choices =
       with {:ok, files} <- File.ls("#{File.cwd!()}/voicepacks") do
         for file <- files, file not in @none_voicepack_dirs do
@@ -25,46 +34,28 @@ defmodule SlashCommand.Track do
         e -> raise e
       end
 
-    %{
-      name: "track",
-      description: "Track a character.",
-      options: [
-        %{
-          # ApplicationCommandType::STRING
-          type: 3,
-          name: "character_name",
-          description: "Specify the character name you would like to track",
-          min_length: 3,
-          required: true
-        },
-        %{
-          # ApplicationCommandType::STRING
-          type: 3,
-          name: "voicepack",
-          description: "Specify the voicepack you would like to use",
-          min_length: 3,
-          choices: voicepack_choices,
-          required: true
-        }
-      ]
-    }
+    [
+      %{
+        type: :string,
+        name: "character_name",
+        description: "Specify the character name you would like to track",
+        min_length: 3,
+        required: true
+      },
+      %{
+        type: :string,
+        name: "voicepack",
+        description: "Specify the voicepack you would like to use",
+        choices: voicepack_choices,
+        required: true
+      }
+    ]
   end
 
-  @impl SlashCommand
-  def command_scope() do
-    case @scope do
-      :application_guilds -> {:guild, Application.get_env(:blurber, :guilds, [])}
-      :global -> :global
-    end
-  end
-
-  @impl SlashCommand
-  def ephemeral?, do: true
-
-  @impl SlashCommand
-  def run(%Interaction{guild_id: guild_id, channel_id: channel_id} = interaction) do
+  @impl Nosedrum.ApplicationCommand
+  def command(%Interaction{guild_id: guild_id, channel_id: channel_id} = interaction) do
     content =
-      with options <- SlashCommand.get_options(interaction),
+      with options <- Blurber.get_options(interaction),
            {:ok, character_name} <- Map.fetch(options, "character_name"),
            {:ok, voicepack} <- Map.fetch(options, "voicepack"),
            {:ok, %Guild{voice_states: voice_states}} <- GuildCache.get(guild_id),
@@ -124,9 +115,6 @@ defmodule SlashCommand.Track do
           "Unable to get server info, please make sure you're connected to a voice channel and try again."
       end
 
-    {:response,
-     [
-       content: content
-     ]}
+    [content: content]
   end
 end
