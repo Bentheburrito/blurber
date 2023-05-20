@@ -1,26 +1,21 @@
-defmodule SlashCommand.Ping do
-  alias Nostrum.Struct.Interaction
+defmodule Blurber.ApplicationCommands.Ping do
+  @behaviour Nosedrum.ApplicationCommand
 
-  @behaviour SlashCommand
-
-  @impl SlashCommand
-  def command_definition() do
-    %{
-      name: "ping",
-      description: "Pings the bot"
-    }
+  @impl Nosedrum.ApplicationCommand
+  def description do
+    "Pings the bot"
   end
 
-  @impl SlashCommand
-  def command_scope() do
-    {:guild, Application.get_env(:blurber, :guilds, [])}
+  @impl Nosedrum.ApplicationCommand
+  def type do
+    :slash
   end
 
-  @impl SlashCommand
-  def ephemeral?, do: true
-
-  @impl SlashCommand
-  def run(%Interaction{} = _interaction) do
-    {:response, [content: "pong!"]}
+  @impl Nosedrum.ApplicationCommand
+  def command(_interaction) do
+    [
+      content: "pong!",
+      ephemeral?: true
+    ]
   end
 end

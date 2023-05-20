@@ -1,26 +1,39 @@
 defmodule Blurber.Consumer do
   use Nostrum.Consumer
 
+  alias Blurber.ApplicationCommands.{Ping, Track}
+  alias Blurber.ACDispatcher
+  alias Nosedrum.Interactor.Dispatcher
   alias Nostrum.Api
 
-  def start_link do
-    Consumer.start_link(__MODULE__)
-  end
+  require Logger
 
   def handle_event({:INTERACTION_CREATE, interaction, _ws_state}) do
-    Blurber.InteractionHandler.handle_interaction(interaction)
+    Nosedrum.Interactor.Dispatcher.handle_interaction(interaction, ACDispatcher)
   end
 
   def handle_event({:READY, data, _ws_state}) do
     IO.puts("Logged in under user #{data.user.username}##{data.user.discriminator}")
     Api.update_status(:online, "Planetside 2", 0)
 
-    SlashCommand.init_commands()
-  end
+    command_scope =
+      if System.get_env("MIX_ENV") == "prod" do
+        :global
+      else
+        "TEST_GUILD"
+        |> System.fetch_env!()
+        |> String.to_integer()
+      end
 
-  def handle_event({event, reg_ack, _ws_state})
-      when event in [:APPLICATION_COMMAND_CREATE, :APPLICATION_COMMAND_UPDATE] do
-    SlashCommand.put_register(reg_ack.name, reg_ack)
+    # Register commands
+    # TODO (nosedrum, issue #21): bulk add commands?
+    with {:ok, _} <- Dispatcher.add_command("ping", Ping, command_scope, ACDispatcher),
+         {:ok, _} <- Dispatcher.add_command("track", Track, command_scope, ACDispatcher) do
+      Logger.info("Successfully added application commands.")
+    else
+      error ->
+        Logger.error("An error occurred registering application commands: #{inspect(error)}")
+    end
   end
 
   # Catch all
