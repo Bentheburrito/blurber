@@ -38,7 +38,6 @@ knowledge):
 
 1. fork this repo
 2. add the empty category .txt file to all voicepacks (including `TEMPLATE`).
-3. add the logic to play a random track from the category in `event.rs`, `handle_event()`.
-4. if your category uses events we don't currently subscribe to, update the event names in `track.rs`,
-   `character_subscription()`.
-5. open a PR to the upstream repo. If the CI tests pass (WIP), I'll merge and release with your new category.
+3. update `fetch_category/4` in `lib/ess/session.ex` to return your new category.
+4. if your category uses events we don't currently subscribe to, update `subscription/1` in `lib/ess.ex`
+5. open a PR to the upstream repo. If the CI tests pass (WIP), I'll merge and release with your new category!
