@@ -19,7 +19,8 @@ defmodule Blurber.ESS.Session do
             voicepack: nil,
             guild_id: nil,
             channel_id: nil,
-            character_id: nil
+            character_id: nil,
+            track_queue: []
 
   ### API
 
@@ -34,6 +35,10 @@ defmodule Blurber.ESS.Session do
 
   def handle_event(session_pid, event_name, payload) do
     GenServer.cast(session_pid, {:handle_event, event_name, payload})
+  end
+
+  def play_next_in_queue(session_pid) do
+    GenServer.cast(session_pid, :play_next)
   end
 
   @afk_timeout_mins 10
@@ -51,17 +56,38 @@ defmodule Blurber.ESS.Session do
   def handle_cast({:handle_event, event_name, payload}, %Session{} = state) do
     case fetch_category(event_name, payload, state.character_id, state) do
       {:ok, category, state} ->
-        play_random_sound(category, state)
+        # if the track_queue is empty and we're not currently playing anything, play the sound directly.
+        # Otherwise, enqueue.
+        new_queue =
+          if match?([], state.track_queue) and not Nostrum.Voice.playing?(state.guild_id) do
+            play_random_sound(category, state)
+            []
+          else
+            # This may be slow, but it's simple, and I don't forsee an obsurd amount of tracks building up
+            # The worst case I can think of is mass-death events from e.g. orbital strikes.
+            state.track_queue ++ [category]
+          end
 
         # Cancel the current afk timer, and start another
         Process.cancel_timer(state.afk_timer)
         afk_timer = Process.send_after(self(), :afk_timeout, afk_timeout_ms())
 
-        {:noreply, %Session{state | afk_timer: afk_timer}}
+        {:noreply, %Session{state | afk_timer: afk_timer, track_queue: new_queue}}
 
       :none ->
         {:noreply, state}
     end
+  end
+
+  @impl GenServer
+  def handle_cast(:play_next, %Session{track_queue: []} = state) do
+    {:noreply, state}
+  end
+
+  @impl GenServer
+  def handle_cast(:play_next, %Session{track_queue: [category | queue]} = state) do
+    play_random_sound(category, state)
+    {:noreply, %Session{state | track_queue: queue}}
   end
 
   @impl GenServer
@@ -72,7 +98,7 @@ defmodule Blurber.ESS.Session do
     )
 
     Nostrum.Voice.leave_channel(state.guild_id)
-    ESS.close_session(state.character_id)
+    ESS.close_session(state.character_id, state.guild_id)
 
     {:noreply, state}
   end
@@ -167,23 +193,12 @@ defmodule Blurber.ESS.Session do
     with {:ok, content} <- File.read("#{cwd}/voicepacks/#{session.voicepack}/#{category}.txt"),
          [_ | _] = filenames <- String.split(content, "\n", trim: true),
          file_path <-
-           "#{cwd}/voicepacks/#{session.voicepack}/tracks/#{Enum.random(filenames)}",
-         :ok <- Nostrum.Voice.play(session.guild_id, file_path) do
-      Task.await(Task.async(fn -> sleep_until_not_playing(session.guild_id) end), :infinity)
+           "#{cwd}/voicepacks/#{session.voicepack}/tracks/#{Enum.random(filenames)}" do
+      Nostrum.Voice.play(session.guild_id, file_path)
     else
       uhoh ->
         Logger.error("Unable to play sound: #{inspect(uhoh)}")
         :error
-    end
-  end
-
-  # this is a very hacky way to "queue" audio - would be nice if there was a way to hook into updates from Nostrum.Voice
-  defp sleep_until_not_playing(guild_id, check_next_ms \\ 1000) do
-    if Nostrum.Voice.playing?(guild_id) do
-      Process.sleep(check_next_ms)
-      sleep_until_not_playing(guild_id, check_next_ms)
-    else
-      false
     end
   end
 end
