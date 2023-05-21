@@ -20,7 +20,8 @@ defmodule Blurber.ESS.Session do
             guild_id: nil,
             channel_id: nil,
             character_id: nil,
-            track_queue: []
+            track_queue: [],
+            last_played_category: nil
 
   ### API
 
@@ -58,25 +59,43 @@ defmodule Blurber.ESS.Session do
       {:ok, category, state} ->
         # if the track_queue is empty and we're not currently playing anything, play the sound directly.
         # Otherwise, enqueue.
-        new_queue =
+        {new_queue, last_category} =
           if match?([], state.track_queue) and not Nostrum.Voice.playing?(state.guild_id) do
             play_random_sound(category, state)
-            []
+            {[], category}
           else
             # This may be slow, but it's simple, and I don't forsee an obsurd amount of tracks building up
             # The worst case I can think of is mass-death events from e.g. orbital strikes.
-            state.track_queue ++ [category]
+            {state.track_queue ++ [category], state.last_played_category}
           end
 
         # Cancel the current afk timer, and start another
         Process.cancel_timer(state.afk_timer)
         afk_timer = Process.send_after(self(), :afk_timeout, afk_timeout_ms())
 
-        {:noreply, %Session{state | afk_timer: afk_timer, track_queue: new_queue}}
+        new_state = %Session{
+          state
+          | afk_timer: afk_timer,
+            track_queue: new_queue,
+            last_played_category: last_category
+        }
+
+        {:noreply, new_state}
 
       :none ->
         {:noreply, state}
     end
+  end
+
+  @impl GenServer
+  def handle_cast(:play_next, %Session{last_played_category: "logout"} = state) do
+    Nostrum.Api.create_message(
+      state.channel_id,
+      "The tracked character has logged out, ending tracking session."
+    )
+
+    Nostrum.Voice.leave_channel(state.guild_id)
+    ESS.close_session(state.character_id, state.guild_id)
   end
 
   @impl GenServer
@@ -87,7 +106,7 @@ defmodule Blurber.ESS.Session do
   @impl GenServer
   def handle_cast(:play_next, %Session{track_queue: [category | queue]} = state) do
     play_random_sound(category, state)
-    {:noreply, %Session{state | track_queue: queue}}
+    {:noreply, %Session{state | track_queue: queue, last_played_category: category}}
   end
 
   @impl GenServer
