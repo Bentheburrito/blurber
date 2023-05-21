@@ -16,6 +16,7 @@ defmodule Blurber.Application do
 
     children = [
       {DynamicSupervisor, strategy: :one_for_one, name: Blurber.ESS.DynamicSupervisor},
+      Blurber.ESS.GuildSessionCache,
       {Blurber.ESS, []},
       {PS2.Socket, ess_opts},
       {Nosedrum.Interactor.Dispatcher, name: Blurber.ACDispatcher},

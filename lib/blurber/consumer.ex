@@ -1,15 +1,27 @@
 defmodule Blurber.Consumer do
   use Nostrum.Consumer
 
+  alias Blurber.ESS.Session
   alias Blurber.ApplicationCommands.{Ping, Track}
   alias Blurber.ACDispatcher
   alias Nosedrum.Interactor.Dispatcher
   alias Nostrum.Api
+  alias Nostrum.Struct.Event.SpeakingUpdate
 
   require Logger
 
   def handle_event({:INTERACTION_CREATE, interaction, _ws_state}) do
     Nosedrum.Interactor.Dispatcher.handle_interaction(interaction, ACDispatcher)
+  end
+
+  def handle_event(
+        {:VOICE_SPEAKING_UPDATE, %SpeakingUpdate{speaking: false, guild_id: guild_id},
+         _voice_state}
+      ) do
+    case Blurber.ESS.GuildSessionCache.fetch(guild_id) do
+      {:ok, pid} -> Session.play_next_in_queue(pid)
+      :error -> nil
+    end
   end
 
   def handle_event({:READY, data, _ws_state}) do

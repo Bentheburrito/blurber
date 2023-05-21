@@ -25,6 +25,7 @@ defmodule Blurber.ESS do
 
     case DynamicSupervisor.start_child(Blurber.ESS.DynamicSupervisor, child_spec) do
       {:ok, pid} ->
+        Blurber.ESS.GuildSessionCache.put(guild_id, pid)
         GenServer.call(__MODULE__, {:new_session, character_id, pid})
 
       e ->
@@ -33,8 +34,8 @@ defmodule Blurber.ESS do
     end
   end
 
-  def close_session(character_id) do
-    GenServer.call(__MODULE__, {:close_session, character_id})
+  def close_session(character_id, guild_id) do
+    GenServer.call(__MODULE__, {:close_session, character_id, guild_id})
   end
 
   @spec session_pid(character_id :: String.t()) :: {:ok, pid()} | {:error, :not_found}
@@ -90,12 +91,13 @@ defmodule Blurber.ESS do
   end
 
   @impl GenServer
-  def handle_call({:close_session, character_id}, _from, %ESS{} = state) do
+  def handle_call({:close_session, character_id, guild_id}, _from, %ESS{} = state) do
     case Map.pop(state.patterns, character_id, :no_session) do
       {:no_session, _} ->
         {:reply, {:error, :not_found}, state}
 
       {pid, new_patterns} ->
+        Blurber.ESS.GuildSessionCache.delete(guild_id)
         result = DynamicSupervisor.terminate_child(Blurber.ESS.DynamicSupervisor, pid)
         {:reply, result, %ESS{state | patterns: new_patterns}}
     end
