@@ -4,14 +4,14 @@ defmodule Blurber.Consumer do
   alias Blurber.ESS.Session
   alias Blurber.ApplicationCommands.{Ping, Track}
   alias Blurber.ACDispatcher
-  alias Nosedrum.Interactor.Dispatcher
+  alias Nosedrum.Storage.Dispatcher
   alias Nostrum.Api
   alias Nostrum.Struct.Event.SpeakingUpdate
 
   require Logger
 
   def handle_event({:INTERACTION_CREATE, interaction, _ws_state}) do
-    Nosedrum.Interactor.Dispatcher.handle_interaction(interaction, ACDispatcher)
+    Nosedrum.Storage.Dispatcher.handle_interaction(interaction, ACDispatcher)
   end
 
   def handle_event(
