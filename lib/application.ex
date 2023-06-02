@@ -19,7 +19,7 @@ defmodule Blurber.Application do
       Blurber.ESS.GuildSessionCache,
       {Blurber.ESS, []},
       {PS2.Socket, ess_opts},
-      {Nosedrum.Interactor.Dispatcher, name: Blurber.ACDispatcher},
+      {Nosedrum.Storage.Dispatcher, name: Blurber.ACDispatcher},
       {Blurber.Consumer, name: Blurber.Consumer}
     ]
 

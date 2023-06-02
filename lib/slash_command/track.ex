@@ -60,13 +60,13 @@ defmodule Blurber.ApplicationCommands.Track do
          {:ok, voicepack} <- Map.fetch(options, "voicepack"),
          {:ok, %Guild{voice_states: voice_states}} <- GuildCache.get(guild_id),
          %{channel_id: vc_id} <- Enum.find(voice_states, &(&1.user_id == interaction.user.id)) do
-      # Run the rest of the command in another process and defer the full response with Discord.
+      # Run the rest of the command after deferring the full response with Discord.
       # The Census query can take more than 5 seconds to run (and even randomly fail...)
-      Task.start(fn ->
-        do_command(interaction, character_name, voicepack, vc_id)
-      end)
-
-      [type: :deferred_channel_message_with_source]
+      [
+        type:
+          {:deferred_channel_message_with_source,
+           {&do_command/4, [interaction, character_name, voicepack, vc_id]}}
+      ]
     else
       :error ->
         Logger.error("Could not fetch required /track parameters.")
@@ -121,7 +121,7 @@ defmodule Blurber.ApplicationCommands.Track do
 
         {:error, error} ->
           Logger.error("Could not fetch character_id in /track: #{inspect(error)}")
-          do_command(interaction, character_name, voicepack, vc_id, remaining_tries - 1)
+          do_command(interaction, character_name, voicepack, vc_id, remaining_tries - 1)[:content]
 
         e ->
           Logger.error("Could not create a new session and join the voice channel: #{inspect(e)}")
@@ -129,7 +129,7 @@ defmodule Blurber.ApplicationCommands.Track do
           "Could not join the voice channel, please try again soon."
       end
 
-    Nostrum.Api.edit_interaction_response(interaction, %{content: content})
+    [content: content]
   end
 
   defp query(character_name) do
