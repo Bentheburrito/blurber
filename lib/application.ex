@@ -23,7 +23,7 @@ defmodule Blurber.Application do
       {Blurber.Consumer, name: Blurber.Consumer}
     ]
 
-    opts = [strategy: :one_for_one, name: Pobcoin.Supervisor]
+    opts = [strategy: :one_for_one, name: Blurber.Supervisor]
     Supervisor.start_link(children, opts)
   end
 end

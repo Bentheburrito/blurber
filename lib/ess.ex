@@ -12,7 +12,10 @@ defmodule Blurber.ESS do
   alias Blurber.ESS
   alias Blurber.ESS.Session
 
-  defstruct patterns: %{}, weapon_ids: :unfetched
+  @restart_after_ms 60 * 1000
+
+  @enforce_keys [:restart_timer]
+  defstruct patterns: %{}, weapon_ids: :unfetched, restart_timer: nil
 
   ### API
 
@@ -47,7 +50,7 @@ defmodule Blurber.ESS do
     GenServer.call(__MODULE__, {:weapon_id?, weapon_id})
   end
 
-  def subscription(character_id) do
+  def subscription(character_id_list) when is_list(character_id_list) do
     [
       events: [
         PS2.player_login(),
@@ -57,18 +60,30 @@ defmodule Blurber.ESS do
         # Revive
         PS2.gain_experience(7),
         # Squad Revive
-        PS2.gain_experience(53)
+        PS2.gain_experience(53),
+        PS2.item_added()
       ],
       worlds: [],
-      characters: [character_id]
+      characters: character_id_list
     ]
+  end
+
+  def subscription(character_id) do
+    subscription([character_id])
   end
 
   ### Impl
 
   @impl GenServer
   def init(_init_state) do
-    {:ok, %ESS{patterns: %{}}}
+    restart_timer = Process.send_after(self(), :restart_socket, @restart_after_ms)
+    {:ok, %ESS{patterns: %{}, restart_timer: restart_timer}}
+  end
+
+  @server_health_update PS2.server_health_update()
+  @impl PS2.SocketClient
+  def handle_event({@server_health_update, _payload}) do
+    GenServer.cast(__MODULE__, :ess_heartbeat)
   end
 
   @impl PS2.SocketClient
@@ -132,6 +147,31 @@ defmodule Blurber.ESS do
     end
 
     {:noreply, state}
+  end
+
+  @impl GenServer
+  def handle_cast(:ess_heartbeat, %ESS{} = state) do
+    Process.cancel_timer(state.restart_timer)
+    restart_timer = Process.send_after(self(), :restart_socket, @restart_after_ms)
+    {:noreply, %ESS{state | restart_timer: restart_timer}}
+  end
+
+  @impl GenServer
+  def handle_info(:restart_socket, %ESS{} = state) do
+    Logger.debug("restarting socket")
+
+    case Supervisor.terminate_child(Blurber.Supervisor, PS2.Socket) do
+      :ok ->
+        Supervisor.restart_child(Blurber.Supervisor, PS2.Socket)
+        |> IO.inspect(label: "restart_child call")
+
+      {:error, :not_found} ->
+        raise "Tried to restart the ESS socket, but Blurber.Supervisor could not find it"
+    end
+
+    Process.cancel_timer(state.restart_timer)
+    restart_timer = Process.send_after(self(), :restart_socket, @restart_after_ms)
+    {:noreply, %ESS{state | restart_timer: restart_timer}}
   end
 
   defp get_weapon_ids(%ESS{} = state) do
