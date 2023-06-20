@@ -163,7 +163,10 @@ defmodule Blurber.ESS do
     case Supervisor.terminate_child(Blurber.Supervisor, PS2.Socket) do
       :ok ->
         Supervisor.restart_child(Blurber.Supervisor, PS2.Socket)
-        |> IO.inspect(label: "restart_child call")
+
+        subscription = state.patterns |> Map.keys() |> subscription()
+
+        PS2.Socket.subscribe!(Blurber.Socket, subscription)
 
       {:error, :not_found} ->
         raise "Tried to restart the ESS socket, but Blurber.Supervisor could not find it"

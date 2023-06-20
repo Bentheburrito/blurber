@@ -154,6 +154,7 @@ defmodule Blurber.ESS.Session do
         {3, _, true} -> {"kill_triple", spree_count + 1}
         {4, _, true} -> {"kill_quad", spree_count + 1}
         {5, _, true} -> {"kill_penta", spree_count + 1}
+        {n, _, true} when n > 5 -> {"kill_penta", spree_count + 1}
       end
 
     new_session = %Session{
